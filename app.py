@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import json
 from datetime import datetime
+import urllib.parse
 
 # 1. アプリの裏側の設定
 st.set_page_config(page_title="向洋大原自治会", page_icon="🏡", layout="centered")
@@ -9,15 +10,28 @@ st.set_page_config(page_title="向洋大原自治会", page_icon="🏡", layout=
 # ★ご自身のGASのURLが入っているか確認してください
 GAS_URL = "https://script.google.com/macros/s/AKfycby4K-p_AZRlbpK85WijSwqjkUN8DtR9ExrG-WHrZhQP8qPqxvJ20sOkewWqf4Wu9TabiA/exec"
 
-def fetch_notices():
-    """スプレッドシートからお知らせ一覧を取得する関数"""
+# ★実際のアプリURLを入力してください
+APP_URL = "https://jichikai-app-grtxv8oupmdqtfkddsuhmn.streamlit.app/"  
+
+def fetch_data():
+    """スプレッドシートからお知らせとカレンダー情報を安全に取得する関数"""
     if "★" in GAS_URL or not GAS_URL:
-        return []
+        return {"notices": [], "events": []}
     try:
         res = requests.get(GAS_URL)
-        return res.json()
+        res_data = res.json()
+        
+        # 以前の旧GAS（配列形式）と新GAS（辞書形式）の両方に対応する処理
+        if isinstance(res_data, list):
+            return {"notices": res_data, "events": []}
+        elif isinstance(res_data, dict):
+            return {
+                "notices": res_data.get("notices", []),
+                "events": res_data.get("events", [])
+            }
+        return {"notices": [], "events": []}
     except Exception as e:
-        return []
+        return {"notices": [], "events": []}
 
 def send_to_gas(payload):
     """GASにデータ（既読・SOS）を送信する関数"""
@@ -54,6 +68,11 @@ else:
     card_text_color = "#ffffff"
     role_badge = "🏡 一般会員"
 
+# データ安全取得
+data = fetch_data()
+notices = data.get("notices", [])
+events = data.get("events", [])
+
 # --- メイン機能 ---
 tab_card, tab_notice, tab_cal, tab_sos = st.tabs(["🪪 会員証", "📢 お知らせ", "📅 カレンダー", "🆘 安否確認"])
 
@@ -76,7 +95,7 @@ with tab_card:
     """, unsafe_allow_html=True)
     st.success(f"✅ 有効な会員証です（区分: {user_role}）。")
 
-# --- 2. お知らせ（添付資料ボタン ＆ 日付表示整形を追加！） ---
+# --- 2. お知らせ ---
 with tab_notice:
     st.subheader("📢 回覧板・お知らせ")
     st.caption(f"👤 現在の確認者: {user_name} 様 ({user_ban} / {user_role})")
@@ -84,19 +103,19 @@ with tab_notice:
     if st.button("🔄 お知らせを再読み込み"):
         st.rerun()
 
-    notices = fetch_notices()
-    
-    if not notices:
+    if not notices or not isinstance(notices, list):
         st.info("現在、新しいお知らせはありません。（または読み込み中...）")
     else:
         today = datetime.now()
         
         for idx, notice in enumerate(notices):
+            if not isinstance(notice, dict):
+                continue
+                
             is_new = False
             raw_date = str(notice.get('date', ''))
             display_date = raw_date
             
-            # 日付の見た目を「2026/08/18」に整形する処理
             if raw_date:
                 try:
                     clean_date = raw_date.split("T")[0].replace("-", "/")
@@ -110,7 +129,8 @@ with tab_notice:
             if idx == 0:
                 is_new = True
 
-            title_display = f"🚨【NEW! 新着】{notice['title']}" if is_new else notice['title']
+            title_val = notice.get('title', '無題')
+            title_display = f"🚨【NEW! 新着】{title_val}" if is_new else title_val
             is_first = (idx == 0)
             
             with st.expander(title_display, expanded=is_first):
@@ -122,9 +142,8 @@ with tab_notice:
                     """, unsafe_allow_html=True)
                 
                 st.write(f"**投稿日:** {display_date}")
-                st.write(notice['content'])
+                st.write(notice.get('content', ''))
                 
-                # 📎 添付資料URLがある場合のボタン表示
                 file_url = notice.get('fileUrl', '')
                 if file_url:
                     st.markdown(f"""
@@ -145,10 +164,22 @@ with tab_notice:
                             "userName": user_name,
                             "userBan": user_ban,
                             "userRole": user_role,
-                            "title": notice['title']
+                            "title": title_val
                         }
                         if send_to_gas(payload):
                             st.success(f"🎉 スプレッドシートへ記録されました！（送信者: {user_name} 様）")
+
+                line_text = f"【向洋大原自治会からのお知らせ】\n\n📌 {title_val}\n\n{notice.get('content', '')}\n\n👇 詳細確認・「読みました」送信はこちらから\n{APP_URL}"
+                encoded_text = urllib.parse.quote(line_text)
+                line_share_url = f"https://line.me/R/msg/text/?{encoded_text}"
+                
+                st.markdown(f"""
+                <a href="{line_share_url}" target="_blank" style="text-decoration: none;">
+                    <div style="background-color: #06C755; color: white; padding: 10px; border-radius: 8px; text-align: center; font-weight: bold; margin-top: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        💬 このお知らせをLINEで住民へ送信・通知する ↗️
+                    </div>
+                </a>
+                """, unsafe_allow_html=True)
 
 # --- 3. カレンダー ---
 with tab_cal:
@@ -159,18 +190,27 @@ with tab_cal:
     with col_f3: show_salon = st.checkbox("いきいきサロン", value=True)
     with col_f4: show_taikyo = st.checkbox("体育協会", value=True)
     st.divider()
-    events = [
-        {"date": "8月14日(金) 17:00〜", "title": "大原町 盆踊り大会", "org": "自治会", "bg": "#FFF3CD", "text": "#856404", "desc": "場所：大原集会所前広場 / 屋台や出店があります！"},
-        {"date": "8月14日(金) 16:30〜", "title": "かた抜き・りんご飴 出店準備", "org": "子ども会", "bg": "#D1ECF1", "text": "#0C5460", "desc": "場所：大原集会所前 / 役員・保護者お手伝い集合"},
-        {"date": "8月20日(木) 10:00〜", "title": "健康お茶会＆体操教室", "org": "いきいきサロン", "bg": "#D4EDDA", "text": "#155724", "desc": "場所：大原集会所 和室 / 水筒とお手拭きをご持参ください"},
-        {"date": "9月06日(日) 09:00〜", "title": "3町合同 運動会打合せ", "org": "体育協会", "bg": "#F8D7DA", "text": "#721C24", "desc": "場所：大原集会所 会議室 / 各班運動会担当者ご出席ください"},
-    ]
-    for ev in events:
-        if (ev["org"] == "自治会" and show_jichikai) or (ev["org"] == "子ども会" and show_kodomo) or (ev["org"] == "いきいきサロン" and show_salon) or (ev["org"] == "体育協会" and show_taikyo):
-            st.markdown(f"""<div style="background-color: {ev['bg']}; color: {ev['text']}; padding: 12px 15px; border-radius: 10px; margin-bottom: 12px; border-left: 6px solid {ev['text']};">
-                <div style="font-size: 0.85rem; font-weight: bold; opacity: 0.8;">【{ev['org']}】{ev['date']}</div>
-                <div style="font-size: 1.1rem; font-weight: bold; margin: 4px 0;">{ev['title']}</div>
-                <div style="font-size: 0.9rem; opacity: 0.9;">{ev['desc']}</div></div>""", unsafe_allow_html=True)
+    
+    style_map = {
+        "自治会": {"bg": "#FFF3CD", "text": "#856404"},
+        "子ども会": {"bg": "#D1ECF1", "text": "#0C5460"},
+        "いきいきサロン": {"bg": "#D4EDDA", "text": "#155724"},
+        "体育協会": {"bg": "#F8D7DA", "text": "#721C24"}
+    }
+    
+    if not events or not isinstance(events, list):
+        st.info("現在、予定されている行事はありません。")
+    else:
+        for ev in events:
+            if not isinstance(ev, dict):
+                continue
+            org = ev.get("org", "自治会")
+            if (org == "自治会" and show_jichikai) or (org == "子ども会" and show_kodomo) or (org == "いきいきサロン" and show_salon) or (org == "体育協会" and show_taikyo):
+                st_style = style_map.get(org, {"bg": "#E2E3E5", "text": "#383D41"})
+                st.markdown(f"""<div style="background-color: {st_style['bg']}; color: {st_style['text']}; padding: 12px 15px; border-radius: 10px; margin-bottom: 12px; border-left: 6px solid {st_style['text']};">
+                    <div style="font-size: 0.85rem; font-weight: bold; opacity: 0.8;">【{org}】{ev.get('date', '')}</div>
+                    <div style="font-size: 1.1rem; font-weight: bold; margin: 4px 0;">{ev.get('title', '')}</div>
+                    <div style="font-size: 0.9rem; opacity: 0.9;">{ev.get('desc', '')}</div></div>""", unsafe_allow_html=True)
 
 # --- 4. 防災・安否確認 ---
 with tab_sos:
