@@ -50,12 +50,35 @@ notices = data.get("notices", [])
 events = data.get("events", [])
 members = data.get("members", [])
 
-# --- サイドバー：会員情報設定エリア ---
+# --- サイドバー：会員情報設定エリア（スプレッドシートの選択肢に完全準拠！） ---
 st.sidebar.header("🪪 会員情報設定")
 user_name = st.sidebar.text_input("お名前", value="大原 太郎")
 user_ban = st.sidebar.selectbox("所属する班", ["1班", "2班", "3班", "4班", "5班"])
-user_role = st.sidebar.selectbox("役職区分1", ["一般会員", "現役役員", "役員経験者(OB/OG)"])
-user_role2 = st.sidebar.selectbox("役職区分2（イベント等）", ["設定なし", "夏フェス運営", "子ども会役員", "防災委員"])
+
+# D列（役職）の選択肢
+user_role = st.sidebar.selectbox(
+    "役職", 
+    [
+        "一般会員", 
+        "自治会 会長", 
+        "自治会 副会長", 
+        "会計", 
+        "監査", 
+        "総務", 
+        "書記", 
+        "子ども会 会長", 
+        "子ども会 副会長", 
+        "福祉", 
+        "民生", 
+        "体協", 
+        "評議員", 
+        "班長"
+    ]
+)
+
+# E列（役職2）の選択肢
+user_role2 = st.sidebar.selectbox("役職2", ["設定なし", "夏フェス運営"])
+
 user_id = st.sidebar.text_input("会員ID（または電話番号）", value="OHARA-0001")
 
 # 名簿データ、またはサイドバーの選択値から「夏フェス運営」かどうかを判定
@@ -70,15 +93,17 @@ matched_member = next((m for m in members if m.get("name") == user_name), None)
 if matched_member and "夏フェス運営" in str(matched_member.get("role2", "")):
     is_fes_staff = True
 
-# 会員証デザイン設定
-if user_role == "現役役員":
+# 会員証デザイン設定（役職に応じて豪華に変化）
+officer_roles = ["自治会 会長", "自治会 副会長", "会計", "監査", "総務", "書記", "子ども会 会長", "子ども会 副会長"]
+
+if user_role in officer_roles:
     card_bg = "linear-gradient(135deg, #BF953F 0%, #FCF6BA 25%, #B38728 50%, #FBF5B7 75%, #AA771C 100%)"
     card_text_color = "#333333"
-    role_badge = "🌟 現役役員"
-elif user_role == "役員経験者(OB/OG)":
+    role_badge = f"🌟 {user_role}"
+elif user_role != "一般会員":
     card_bg = "linear-gradient(135deg, #134E5E 0%, #71B280 100%)"
     card_text_color = "#ffffff"
-    role_badge = "🎖️ 役員経験者(OB/OG)"
+    role_badge = f"🎖️ {user_role}"
 else:
     card_bg = "linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)"
     card_text_color = "#ffffff"
@@ -107,7 +132,7 @@ with tab_card:
         </div>
     </div>
     """, unsafe_allow_html=True)
-    st.success(f"✅ 有効な会員証です（区分: {user_role} / 役職2: {user_role2}）。")
+    st.success(f"✅ 有効な会員証です（役職: {user_role} / 役職2: {user_role2}）。")
 
 # --- 2. お知らせ ---
 with tab_notice:
@@ -226,14 +251,14 @@ with tab_cal:
                     <div style="font-size: 1.1rem; font-weight: bold; margin: 4px 0;">{ev.get('title', '')}</div>
                     <div style="font-size: 0.9rem; opacity: 0.9;">{ev.get('desc', '')}</div></div>""", unsafe_allow_html=True)
 
-# --- 4. 夏フェス会計（役職自動判定 ＆ サイドバー選択の両対応） ---
+# --- 4. 夏フェス会計 ---
 with tab_fes:
     st.subheader("🎪 夏フェス 収支記帳（運営関係者専用）")
     
     if not is_fes_staff:
         st.error("🔒 閲覧権限がありません")
-        st.info("このエリアは、スプレッドシートの会員名簿で【役職2：夏フェス運営】となっているか、左メニューの【役職区分2】で「夏フェス運営」を選択している方のみ利用可能です。")
-        st.caption(f"現在の設定: **{user_name}** 様（役職2: {user_role2}）")
+        st.info("このエリアは、スプレッドシートの会員名簿で【役職2：夏フェス運営】となっているか、左メニューの【役職2】で「夏フェス運営」を選択している方のみ利用可能です。")
+        st.caption(f"現在の設定: **{user_name}** 様（役職: {user_role} / 役職2: {user_role2}）")
     else:
         st.success(f"🔓 運営スタッフ確認完了（{user_name} 様）")
         st.divider()
