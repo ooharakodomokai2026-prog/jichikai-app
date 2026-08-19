@@ -8,20 +8,18 @@ import urllib.parse
 st.set_page_config(page_title="向洋大原自治会", page_icon="🏡", layout="centered")
 
 # ★ご自身のGASのURLが入っているか確認してください
-GAS_URL = "https://script.google.com/macros/s/AKfycby4K-p_AZRlbpK85WijSwqjkUN8DtR9ExrG-WHrZhQP8qPqxvJ20sOkewWqf4Wu9TabiA/exec"
+GAS_URL = "ここにコピーしたGASのURLを貼り付け"
 
 # ★実際のアプリURLを入力してください
 APP_URL = "https://jichikai-app-grtxv8oupmdqtfkddsuhmn.streamlit.app/"  
 
 def fetch_data():
-    """スプレッドシートからお知らせとカレンダー情報を安全に取得する関数"""
+    """スプレッドシートからお知らせとカレンダー情報を取得する関数"""
     if "★" in GAS_URL or not GAS_URL:
         return {"notices": [], "events": []}
     try:
         res = requests.get(GAS_URL)
         res_data = res.json()
-        
-        # 以前の旧GAS（配列形式）と新GAS（辞書形式）の両方に対応する処理
         if isinstance(res_data, list):
             return {"notices": res_data, "events": []}
         elif isinstance(res_data, dict):
@@ -34,7 +32,7 @@ def fetch_data():
         return {"notices": [], "events": []}
 
 def send_to_gas(payload):
-    """GASにデータ（既読・SOS）を送信する関数"""
+    """GASにデータを送信する関数"""
     if "★" in GAS_URL or not GAS_URL:
         st.warning("⚠️ GASのURLが設定されていません。")
         return False
@@ -74,7 +72,7 @@ notices = data.get("notices", [])
 events = data.get("events", [])
 
 # --- メイン機能 ---
-tab_card, tab_notice, tab_cal, tab_sos = st.tabs(["🪪 会員証", "📢 お知らせ", "📅 カレンダー", "🆘 安否確認"])
+tab_card, tab_notice, tab_cal, tab_fes, tab_sos = st.tabs(["🪪 会員証", "📢 お知らせ", "📅 カレンダー", "🎪 夏フェス会計", "🆘 安否確認"])
 
 # --- 1. 会員証 ---
 with tab_card:
@@ -212,7 +210,68 @@ with tab_cal:
                     <div style="font-size: 1.1rem; font-weight: bold; margin: 4px 0;">{ev.get('title', '')}</div>
                     <div style="font-size: 0.9rem; opacity: 0.9;">{ev.get('desc', '')}</div></div>""", unsafe_allow_html=True)
 
-# --- 4. 防災・安否確認 ---
+# --- 4. 夏フェス会計記帳機能（新規追加！） ---
+with tab_fes:
+    st.subheader("🎪 夏フェス 収支記帳（役員・担当用）")
+    st.caption("※企業協賛金・寄付金や、買い出し・経費をその場でサクッと入力できます！")
+    
+    fes_mode = st.radio("入力項目を選択してください", ["💰 収入（協賛金・売上など）", "💸 支出（買い出し・経費など）"], horizontal=True)
+    st.divider()
+    
+    if "💰 収入" in fes_mode:
+        st.markdown("##### 💰 収入の記帳（協賛金・寄付金・売上）")
+        inc_date = st.date_input("入金日", datetime.now())
+        inc_cat = st.selectbox("区分", ["企業協賛金", "個人寄付", "出店・バザー売上", "自治会助成金", "その他"])
+        inc_provider = st.text_input("提供者・企業名", placeholder="例：〇〇建設、山田太郎")
+        inc_amount = st.number_input("金額（円）", min_value=0, step=1000, value=10000)
+        inc_receipt = st.selectbox("領収書発行", ["発行済", "不要", "後日発行"])
+        inc_memo = st.text_input("備考（リターン内容等）", placeholder="例：プログラム名刺広告掲載、提灯名入れなど")
+        
+        if st.button("💰 収入データを送信・記帳する", use_container_width=True):
+            if not inc_provider:
+                st.error("提供者・企業名を入力してください。")
+            else:
+                with st.spinner("送信中..."):
+                    payload = {
+                        "type": "fes_income",
+                        "date": inc_date.strftime("%Y/%m/%d"),
+                        "category": inc_cat,
+                        "provider": inc_provider,
+                        "amount": inc_amount,
+                        "receipt": inc_receipt,
+                        "memo": inc_memo
+                    }
+                    if send_to_gas(payload):
+                        st.balloons()
+                        st.success(f"🎉 『{inc_provider} 様』の収入データ（{inc_amount:,}円）を記帳しました！")
+
+    else:
+        st.markdown("##### 💸 支出の記帳（経費・買い出し）")
+        exp_date = st.date_input("購入・支払日", datetime.now())
+        exp_dept = st.selectbox("担当部門", ["自治会", "子ども会", "合同実行委員会"])
+        exp_payee = st.text_input("支払先（店名等）", placeholder="例：〇〇スーパー、ダイソー、〇〇酒屋")
+        exp_item = st.text_input("品名・用途", placeholder="例：かき氷シロップ、装飾用テープ、花火代")
+        exp_amount = st.number_input("金額（円）", min_value=0, step=100, value=1500)
+        exp_memo = st.text_input("備考", placeholder="例：レシート保管済、領収書No.123 など")
+        
+        if st.button("💸 支出データを送信・記帳する", use_container_width=True):
+            if not exp_payee or not exp_item:
+                st.error("支払先と品名・用途を入力してください。")
+            else:
+                with st.spinner("送信中..."):
+                    payload = {
+                        "type": "fes_expense",
+                        "date": exp_date.strftime("%Y/%m/%d"),
+                        "department": exp_dept,
+                        "payee": exp_payee,
+                        "item": exp_item,
+                        "amount": exp_amount,
+                        "memo": exp_memo
+                    }
+                    if send_to_gas(payload):
+                        st.success(f"✅ 『{exp_payee}（{exp_item}）』の支出データ（{exp_amount:,}円）を記帳しました！")
+
+# --- 5. 防災・安否確認 ---
 with tab_sos:
     st.subheader("🆘 災害時 安否確認・ご近所SOS")
     st.warning("⚠️ 地震や豪雨などの災害発生時のみ使用してください。自治会対策本部へ即座に状況が届きます。")
